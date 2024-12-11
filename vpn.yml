@@ -1,0 +1,146 @@
+---
+- name: Configure GRE over IPSec VPN between R1 and R3
+  hosts: routers
+  gather_facts: no
+  vars:
+    key: MY_SHARED_KEY
+    tsr1: r1>r3
+    tsr3: r3>r1
+    cm: VPN_MAP
+    tunnel_id: 0
+    tunnel_source_r1: s2/0
+    tunnel_source_r3: s2/0
+    tunnel_destination_r1: 209.202.103.1  # R1's Serial Interface IP
+    tunnel_destination_r3: 211.200.2.1  # R3's Serial Interface IP
+    tunnel_ip_r1: 172.16.16.1
+    tunnel_ip_r3: 172.16.16.2
+    subnet_mask: 255.255.255.252
+
+  tasks:
+    - name: Configure GRE Tunnel on R1 ## sh run
+      ios_config:
+        lines:
+          - interface Tunnel{{ tunnel_id }}
+          - no shutdown
+          - tunnel mode gre ip
+          - tunnel source {{ tunnel_source_r1 }}
+          - tunnel destination {{ tunnel_destination_r3 }}
+          - ip address {{ tunnel_ip_r1 }} {{ subnet_mask }}
+      when: inventory_hostname == "R1"
+
+    - name: Configure GRE Tunnel on R3
+      ios_config:
+        lines:
+          - interface Tunnel{{ tunnel_id }}
+          - no shutdown
+          - tunnel mode gre ip
+          - tunnel source {{ tunnel_source_r3 }}
+          - tunnel destination {{ tunnel_destination_r1 }}
+          - ip address {{ tunnel_ip_r3 }} {{ subnet_mask }}
+      when: inventory_hostname == "R3"
+
+    - name: Add Static Route on R1 ## sh run
+      ios_config:
+        lines:
+          - ip route 192.168.2.0 255.255.255.0 172.16.16.2
+      when: inventory_hostname == "R1"
+      
+    - name: Add Static Route on R3 ## sh run
+      ios_config:
+        lines:
+          - ip route 192.168.1.0 255.255.255.0 172.16.16.1
+      when: inventory_hostname == "R3"
+
+    - name: Configure Access List on R1 ## sh run
+      ios_config:
+        lines:
+          - access-list 101 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
+      when: inventory_hostname == "R1"
+
+    - name: Configure ISAKMP Policy on R1 ## sh run
+      ios_config:
+        parents: crypto isakmp policy 10
+        lines: 
+          - encryption aes 256
+          - authentication pre-share
+          - group 5
+      when: inventory_hostname == "R1"
+
+    - name: Configure ISAKMP Pre-Shared Key on R1 ## sh run
+      ios_config:
+        lines:
+          - crypto isakmp key {{ key }} address {{ tunnel_ip_r3 }}
+      when: inventory_hostname == "R1"
+
+    - name: Configure IPSec Transform Set on R1 ## sh run
+      ios_config:
+        lines:
+          - crypto ipsec transform-set {{ tsr1 }} esp-aes 256 esp-sha-hmac
+      when: inventory_hostname == "R1"
+
+    - name: Configure Crypto Map on R1 ## sh run
+      ios_config:
+        lines:
+          - set peer {{ tunnel_ip_r3 }}
+          - set pfs group5
+          - set security-association lifetime seconds 86400
+          - set transform-set {{ tsr1 }}
+          - match address 101
+        parents: crypto map {{ cm }} 10 ipsec-isakmp
+      when: inventory_hostname == "R1"
+
+    - name: Apply Crypto Map to Tunnel Interface on R1 ## sh run
+      ios_config:
+        lines:
+          - crypto map {{ cm }}
+        parents: interface Tunnel{{ tunnel_id }}
+      when: inventory_hostname == "R1"
+
+    - name: Configure Access List on R3 ## sh run
+      ios_config:
+        lines:
+          - access-list 101 permit ip 192.168.2.0 0.0.0.255 192.168.1.0 0.0.0.255
+      when: inventory_hostname == "R3"
+
+    - name: Configure ISAKMP Policy on R3 ## sh run
+      ios_config:
+        parents: crypto isakmp policy 10
+        lines:
+          - encryption aes 256
+          - authentication pre-share
+          - group 5
+      when: inventory_hostname == "R3"
+
+    - name: Configure ISAKMP Pre-Shared Key on R3 ## sh run
+      ios_config:
+        lines:
+          - crypto isakmp key {{ key }} address {{ tunnel_ip_r1 }}
+      when: inventory_hostname == "R3"
+
+    - name: Configure IPSec Transform Set on R3 ## sh run
+      ios_config:
+        lines:
+          - crypto ipsec transform-set {{ tsr3 }} esp-aes 256 esp-sha-hmac
+      when: inventory_hostname == "R3"
+
+    - name: Configure Crypto Map on R3 ## sh run
+      ios_config:
+        lines:
+          - set peer {{ tunnel_ip_r1 }}
+          - set pfs group5
+          - set security-association lifetime seconds 86400
+          - set transform-set {{ tsr3 }}
+          - match address 101
+        parents: crypto map {{ cm }} 10 ipsec-isakmp
+      when: inventory_hostname == "R3"
+
+    - name: Apply Crypto Map to Tunnel Interface on R3 ## sh run
+      ios_config:
+        lines:
+          - crypto map {{ cm }}
+        parents: interface Tunnel{{ tunnel_id }}
+      when: inventory_hostname == "R3"
+
+    # - name: Save Configuration
+    #   ios_config:
+    #     save_when: always

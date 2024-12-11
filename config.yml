@@ -1,0 +1,102 @@
+---
+  - name: Configuring Interfaces and VPN Tunnel on Routers
+    hosts: routers
+    gather_facts: no
+    vars:
+      tunnel_id: 0
+      tunnel_source_r1r3: s2/0
+      tunnel_destination_r1: 211.200.2.1
+      tunnel_destination_r3: 209.202.103.1
+      tunnel_ip_r1: 172.16.16.1
+      tunnel_ip_r3: 172.16.16.2
+      network_a: 192.168.1.0
+      network_b: 192.168.2.0
+      subnet_mask: 255.255.255.0
+
+    tasks:
+      - name: Configuring R1 Interface S2/0
+        ios_config:
+          lines:
+            - interface s2/0
+            - no shutdown
+            - ip address 209.202.103.1 255.255.255.252
+        when: inventory_hostname == "R1"
+      - name: Configuring R1 Interface G1/0
+        ios_config:
+          lines:
+            - interface g1/0
+            - no shutdown
+            - ip address 192.168.1.1 255.255.255.0
+        when: inventory_hostname == "R1"
+      - name: Configuring R1 Routing
+        ios_config:
+          lines:
+            - router ospf 1
+            - network 0.0.0.0 255.255.255.255 area 0
+        when: inventory_hostname == "R1"
+
+      - name: Configuring R2 Interface S1/0
+        ios_config:
+          lines:
+            - interface s1/0
+            - no shutdown
+            - ip address 209.202.103.2 255.255.255.252
+        when: inventory_hostname == "R2"
+      - name: Configuring R2 Interface S1/1
+        ios_config:
+          lines:
+            - interface s1/1
+            - no shutdown
+            - ip address 211.200.2.2 255.255.255.252
+        when: inventory_hostname == "R2"
+      - name: Configuring R2 Routing
+        ios_config:
+          lines:
+            - router ospf 1
+            - network 0.0.0.0 255.255.255.255 area 0
+        when: inventory_hostname == "R2"
+
+      - name: Configuring R3 Interface S2/0
+        ios_config:
+          lines:
+            - interface s2/0
+            - no shutdown
+            - ip address 211.200.2.1 255.255.255.252
+        when: inventory_hostname == "R3"
+      - name: Configuring R3 Interface G1/0
+        ios_config:
+          lines:
+            - interface g1/0
+            - no shutdown
+            - ip address 192.168.2.1 255.255.255.0
+        when: inventory_hostname == "R3"
+      - name: Configuring R3 Routing
+        ios_config:
+          lines:
+            - router ospf 1
+            - network 0.0.0.0 255.255.255.255 area 0
+        when: inventory_hostname == "R3"
+
+      - name: Configure GRE Tunnel on R1
+        ios_config:
+          lines:
+            - int tun{{ tunnel_id }}
+            - tunnel source {{ tunnel_source_r1r3 }}
+            - tunnel destination {{ tunnel_destination_r1 }}
+            - ip add {{ tunnel_ip_r1 }} {{ subnet_mask }}
+          parents: interface tun{{ tunnel_id }}
+        when: inventory_hostname == "R1"
+  
+      - name: Configure GRE Tunnel on R3
+        ios_config:
+          lines:
+            - int tun{{ tunnel_id }}
+            - tunnel source {{ tunnel_source_r1r3 }}
+            - tunnel destination {{ tunnel_destination_r3 }}
+            - ip add {{ tunnel_ip_r3 }} {{ subnet_mask }}
+          parents: interface tun{{ tunnel_id }}
+        when: inventory_hostname == "R3"
+      
+      # - name: Save Running Configuration
+      #   ios_config:
+      #     save_when: always
